@@ -278,6 +278,81 @@ class SaleService {
             throw new AppError('Failed to retrieve sales by payment type');
         }
     }
+
+    async markSaleAsPaid(saleId, paymentType) {
+        const transaction = await sequelize.transaction();
+        try {
+            const sale = await Sale.findByPk(saleId);
+            if (!sale) {
+                throw new NotFoundError('Sale not found');
+            }
+
+            if (sale.status === 'CANCELLED') {
+                throw new ValidationError('Cannot mark a cancelled sale as paid');
+            }
+
+            if (sale.status === 'PAID') {
+                throw new ValidationError('Sale is already paid');
+            }
+
+            await sale.update({
+                status: 'PAID',
+                paymentDate: new Date(),
+                paymentType: paymentType || sale.paymentType
+            }, { transaction });
+
+            await transaction.commit();
+            return await this.getSaleById(saleId);
+        } catch (error) {
+            await transaction.rollback();
+            if (error instanceof AppError) throw error;
+            throw new AppError('Failed to mark sale as paid');
+        }
+    }
+
+    async cancelSale(saleId) {
+        const transaction = await sequelize.transaction();
+        try {
+            const sale = await Sale.findByPk(saleId, {
+                include: [{
+                    model: SaleItem,
+                    include: [Product]
+                }]
+            });
+
+            if (!sale) {
+                throw new NotFoundError('Sale not found');
+            }
+
+            if (sale.status === 'CANCELLED') {
+                throw new ValidationError('Sale is already cancelled');
+            }
+
+            if (sale.status === 'PAID') {
+                throw new ValidationError('Cannot cancel a paid sale');
+            }
+
+            // Restaurer le stock des produits
+            for (const item of sale.SaleItems) {
+                await item.Product.increment('stock', {
+                    by: item.quantity,
+                    transaction
+                });
+            }
+
+            await sale.update({
+                status: 'CANCELLED',
+                cancellationDate: new Date()
+            }, { transaction });
+
+            await transaction.commit();
+            return await this.getSaleById(saleId);
+        } catch (error) {
+            await transaction.rollback();
+            if (error instanceof AppError) throw error;
+            throw new AppError('Failed to cancel sale');
+        }
+    }
 }
 
 module.exports = new SaleService();

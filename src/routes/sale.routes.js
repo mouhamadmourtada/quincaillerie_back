@@ -20,4 +20,8 @@ router.get('/date-range', saleController.getSalesByDateRange);
 router.get('/customer/:customerPhone', saleController.getSalesByCustomerPhone);
 router.get('/payment-type/:paymentType', saleController.getSalesByPaymentType);
 
+// Routes de gestion du statut
+router.post('/:id/pay', saleController.markSaleAsPaid);
+router.post('/:id/cancel', saleController.cancelSale);
+
 module.exports = router;

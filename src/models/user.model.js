@@ -14,10 +14,45 @@ User.init({
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true
     },
+    firstname: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            len: [2, 50]
+        }
+    },
+    lastname: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            len: [2, 50]
+        }
+    },
+    date_naissance: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+        validate: {
+            isDate: true,
+            customValidator(value) {
+                if (value) {
+                    const date = new Date(value);
+                    if (date > new Date()) {
+                        throw new Error('La date de naissance doit être dans le passé');
+                    }
+                }
+            }
+        }
+    },
+    lieu_naissance: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            len: [2, 100]
+        }
+    },
     username: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
         validate: {
             len: [3, 50]
         }
@@ -25,7 +60,6 @@ User.init({
     email: {
         type: DataTypes.STRING,
         allowNull: false,
-        unique: true,
         validate: {
             isEmail: true
         }

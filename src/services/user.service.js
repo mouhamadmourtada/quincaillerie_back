@@ -2,7 +2,27 @@ const { User } = require('../models');
 const { Op } = require('sequelize');
 
 class UserService {
+    
     async createUser(userData) {
+        // Check if username or email already exists
+        const existingUser = await User.findOne({
+            where: {
+                [Op.or]: [
+                    { username: userData.username },
+                    { email: userData.email }
+                ]
+            }
+        });
+
+        if (existingUser) {
+            if (existingUser.username === userData.username) {
+                throw new Error('Username already exists');
+            }
+            if (existingUser.email === userData.email) {
+                throw new Error('Email already exists');
+            }
+        }
+
         return await User.create(userData);
     }
 

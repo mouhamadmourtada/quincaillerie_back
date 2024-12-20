@@ -82,6 +82,24 @@ class SaleController {
             next(error);
         }
     }
+
+    async markSaleAsPaid(req, res, next) {
+        try {
+            const sale = await saleService.markSaleAsPaid(req.params.id, req.body.paymentType);
+            res.json(sale);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async cancelSale(req, res, next) {
+        try {
+            const sale = await saleService.cancelSale(req.params.id);
+            res.json(sale);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new SaleController();

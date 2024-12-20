@@ -1,9 +1,9 @@
 -- Création de la base de données
-CREATE DATABASE IF NOT EXISTS quincaillerie_db;
-USE quincaillerie_db;
+CREATE DATABASE IF NOT EXISTS mcarred_db;
+USE mcarred_db;
 
 -- Configuration du jeu de caractères
-ALTER DATABASE quincaillerie_db CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+ALTER DATABASE mcarred_db CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- Table des utilisateurs
 CREATE TABLE IF NOT EXISTS users (
@@ -112,3 +112,5 @@ VALUES (
     'admin',
     'System'
 ) ON DUPLICATE KEY UPDATE email = email;
+
+

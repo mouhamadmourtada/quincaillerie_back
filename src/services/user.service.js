@@ -32,9 +32,9 @@ class UserService {
         });
     }
 
-    async getUserById(id) {
+    async getUserById(id, includePassword = false) {
         return await User.findByPk(id, {
-            attributes: { exclude: ['password'] }
+            attributes: includePassword ? undefined : { exclude: ['password'] }
         });
     }
 
@@ -49,6 +49,16 @@ class UserService {
         if (!user) return null;
 
         return await user.update(updateData);
+    }
+
+    async updateUserPassword(id, newPassword) {
+        const user = await User.findByPk(id);
+        if (!user) {
+            throw new Error('Utilisateur non trouvé');
+        }
+
+        await user.update({ password: newPassword });
+        return true;
     }
 
     async deleteUser(id) {

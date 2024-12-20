@@ -316,7 +316,11 @@ class SaleService {
             const sale = await Sale.findByPk(saleId, {
                 include: [{
                     model: SaleItem,
-                    include: [Product]
+                    as: 'items',
+                    include: [{
+                        model: Product,
+                        as: 'product'
+                    }]
                 }]
             });
 
@@ -333,8 +337,8 @@ class SaleService {
             }
 
             // Restaurer le stock des produits
-            for (const item of sale.SaleItems) {
-                await item.Product.increment('stock', {
+            for (const item of sale.items) {
+                await item.product.increment('stock', {
                     by: item.quantity,
                     transaction
                 });
@@ -342,12 +346,13 @@ class SaleService {
 
             await sale.update({
                 status: 'CANCELLED',
-                cancellationDate: new Date()
+                // cancellationDate: new Date()
             }, { transaction });
 
             await transaction.commit();
             return await this.getSaleById(saleId);
         } catch (error) {
+            console.error('Cancel sale error:', error);
             await transaction.rollback();
             if (error instanceof AppError) throw error;
             throw new AppError('Failed to cancel sale');

@@ -36,14 +36,14 @@ Product.hasMany(SaleItem, {
     as: 'saleItems'
 });
 
-// Synchronisation de la base de données
+// Synchronisation de la base de données (uniquement les modifications de structure)
 const syncDatabase = async () => {
     try {
-        await sequelize.sync({ alter: true }); // En développement, utilisez { force: true } pour recréer les tables
-        console.log('Database synchronized');
+        await sequelize.sync({ alter: true }); // Synchronise uniquement les changements de structure
+        console.log('Database structure synchronized');
     } catch (error) {
-        console.error('Error synchronizing database:', error);
-        process.exit(1);
+        console.error('Error synchronizing database structure:', error);
+        throw error;
     }
 };
 

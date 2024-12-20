@@ -6,7 +6,7 @@ const { sequelize, syncDatabase } = require('./src/models');
 sequelize.authenticate()
     .then(() => {
         console.log('Connection to database has been established successfully.');
-        // Synchroniser la base de données
+        // Synchroniser la structure de la base de données
         return syncDatabase();
     })
     .then(() => {

@@ -1,16 +1,25 @@
-const Sale = require('../models/sale.model');
-const Product = require('../models/product.model');
-const mongoose = require('mongoose');
+const { Sale, SaleItem, Product, User } = require('../models');
+const sequelize = require('../config/database.config');
+const { Op } = require('sequelize');
 
 class SaleService {
     async createSale(saleData, userId) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
+        const t = await sequelize.transaction();
 
         try {
-            // Calculer le montant total et mettre à jour les stocks
-            const populatedItems = await Promise.all(saleData.items.map(async (item) => {
-                const product = await Product.findById(item.productId);
+            // Créer la vente
+            const sale = await Sale.create({
+                ...saleData,
+                userId,
+                totalAmount: 0 // Sera mis à jour après le calcul des items
+            }, { transaction: t });
+
+            // Traiter les items et calculer le montant total
+            let totalAmount = 0;
+            const saleItems = [];
+
+            for (const item of saleData.items) {
+                const product = await Product.findByPk(item.productId, { transaction: t });
                 if (!product) {
                     throw new Error(`Product not found: ${item.productId}`);
                 }
@@ -19,86 +28,119 @@ class SaleService {
                 }
 
                 // Mettre à jour le stock
-                await Product.findByIdAndUpdate(
-                    item.productId,
-                    { $inc: { stock: -item.quantity } },
-                    { session }
-                );
+                await product.update({
+                    stock: product.stock - item.quantity
+                }, { transaction: t });
 
-                return {
-                    ...item,
+                // Créer l'item de vente
+                const saleItem = await SaleItem.create({
+                    saleId: sale.id,
+                    productId: item.productId,
+                    quantity: item.quantity,
                     unitPrice: product.price,
                     totalPrice: product.price * item.quantity
-                };
-            }));
+                }, { transaction: t });
 
-            const totalAmount = populatedItems.reduce((sum, item) => sum + item.totalPrice, 0);
+                totalAmount += saleItem.totalPrice;
+                saleItems.push(saleItem);
+            }
 
-            const sale = await Sale.create([{
-                ...saleData,
-                items: populatedItems,
-                totalAmount,
-                createdBy: userId
-            }], { session });
+            // Mettre à jour le montant total de la vente
+            await sale.update({ totalAmount }, { transaction: t });
 
-            await session.commitTransaction();
-            return sale[0];
+            await t.commit();
+
+            return await Sale.findByPk(sale.id, {
+                include: [{
+                    model: SaleItem,
+                    as: 'items',
+                    include: [{
+                        model: Product,
+                        as: 'product'
+                    }]
+                }]
+            });
         } catch (error) {
-            await session.abortTransaction();
+            await t.rollback();
             throw error;
-        } finally {
-            session.endSession();
         }
     }
 
     async getAllSales(query = {}) {
-        return await Sale.find(query)
-            .populate('items.productId', 'name price')
-            .populate('createdBy', 'username')
-            .sort({ saleDate: -1 });
+        return await Sale.findAll({
+            include: [{
+                model: SaleItem,
+                as: 'items',
+                include: [{
+                    model: Product,
+                    as: 'product'
+                }]
+            }, {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'username']
+            }],
+            order: [['createdAt', 'DESC']]
+        });
     }
 
     async getSaleById(id) {
-        return await Sale.findById(id)
-            .populate('items.productId', 'name price')
-            .populate('createdBy', 'username');
+        return await Sale.findByPk(id, {
+            include: [{
+                model: SaleItem,
+                as: 'items',
+                include: [{
+                    model: Product,
+                    as: 'product'
+                }]
+            }, {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'username']
+            }]
+        });
     }
 
     async updateSale(id, updateData) {
-        return await Sale.findByIdAndUpdate(
-            id,
-            { $set: updateData },
-            { new: true, runValidators: true }
-        ).populate('items.productId', 'name price');
+        const sale = await Sale.findByPk(id);
+        if (!sale) return null;
+
+        return await sale.update(updateData);
     }
 
     async deleteSale(id) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
+        const t = await sequelize.transaction();
 
         try {
-            const sale = await Sale.findById(id);
+            const sale = await Sale.findByPk(id, {
+                include: [{
+                    model: SaleItem,
+                    as: 'items'
+                }],
+                transaction: t
+            });
+
             if (!sale) {
                 throw new Error('Sale not found');
             }
 
             // Restaurer les stocks
-            await Promise.all(sale.items.map(async (item) => {
-                await Product.findByIdAndUpdate(
-                    item.productId,
-                    { $inc: { stock: item.quantity } },
-                    { session }
+            for (const item of sale.items) {
+                await Product.increment(
+                    { stock: item.quantity },
+                    { 
+                        where: { id: item.productId },
+                        transaction: t
+                    }
                 );
-            }));
+            }
 
-            await Sale.findByIdAndDelete(id, { session });
-            await session.commitTransaction();
+            await sale.destroy({ transaction: t });
+            await t.commit();
             return sale;
         } catch (error) {
-            await session.abortTransaction();
+            await t.rollback();
             throw error;
-        } finally {
-            session.endSession();
         }
     }
 
@@ -114,17 +156,35 @@ class SaleService {
     }
 
     async getSalesByDateRange(startDate, endDate) {
-        return await Sale.find({
-            saleDate: {
-                $gte: startDate,
-                $lte: endDate
-            }
-        }).populate('items.productId', 'name price');
+        return await Sale.findAll({
+            where: {
+                saleDate: {
+                    [Op.between]: [startDate, endDate]
+                }
+            },
+            include: [{
+                model: SaleItem,
+                as: 'items',
+                include: [{
+                    model: Product,
+                    as: 'product'
+                }]
+            }]
+        });
     }
 
     async getSalesByCustomer(customerPhone) {
-        return await Sale.find({ customerPhone })
-            .populate('items.productId', 'name price');
+        return await Sale.findAll({
+            where: { customerPhone },
+            include: [{
+                model: SaleItem,
+                as: 'items',
+                include: [{
+                    model: Product,
+                    as: 'product'
+                }]
+            }]
+        });
     }
 }
 

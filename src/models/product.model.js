@@ -1,35 +1,57 @@
-const mongoose = require('mongoose');
+const { Model, DataTypes } = require('sequelize');
+const sequelize = require('../config/database.config');
 
-const productSchema = new mongoose.Schema({
-    name: {
-        type: String,
-        required: [true, 'Product name is required'],
-        trim: true
+class Product extends Model {}
+
+Product.init({
+    id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true
     },
-    category: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Category',
-        required: [true, 'Product category is required']
+    name: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
+    },
+    categoryId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'categories',
+            key: 'id'
+        }
     },
     price: {
-        type: Number,
-        required: [true, 'Product price is required'],
-        min: [0, 'Price cannot be negative']
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        validate: {
+            min: 0
+        }
     },
     stock: {
-        type: Number,
-        required: [true, 'Product stock is required'],
-        min: [0, 'Stock cannot be negative'],
-        default: 0
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        validate: {
+            min: 0
+        }
     }
 }, {
-    timestamps: true
+    sequelize,
+    modelName: 'Product',
+    tableName: 'products',
+    timestamps: true,
+    indexes: [
+        {
+            fields: ['name']
+        },
+        {
+            fields: ['categoryId']
+        }
+    ]
 });
-
-// Index pour améliorer les performances des recherches
-productSchema.index({ name: 1 });
-productSchema.index({ category: 1 });
-
-const Product = mongoose.model('Product', productSchema);
 
 module.exports = Product;

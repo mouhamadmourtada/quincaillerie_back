@@ -12,16 +12,17 @@ class AuthController {
             }
 
             const user = await userService.createUser(req.body);
-            const token = this.generateToken(user._id);
+            const token = this.generateToken(user.id);
 
             res.status(201).json({
-                _id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
                 role: user.role,
                 token
             });
         } catch (error) {
+            console.error('Register error:', error);
             res.status(400).json({ message: error.message });
         }
     }
@@ -35,16 +36,17 @@ class AuthController {
                 return res.status(401).json({ message: 'Invalid email or password' });
             }
 
-            const token = this.generateToken(user._id);
+            const token = this.generateToken(user.id);
 
             res.json({
-                _id: user._id,
+                id: user.id,
                 username: user.username,
                 email: user.email,
                 role: user.role,
                 token
             });
         } catch (error) {
+            console.error('Login error:', error);
             res.status(400).json({ message: error.message });
         }
     }

@@ -1,4 +1,5 @@
-const Product = require('../models/product.model');
+const { Product, Category } = require('../models');
+const { Op } = require('sequelize');
 
 class ProductService {
     async createProduct(productData) {
@@ -6,44 +7,100 @@ class ProductService {
     }
 
     async getAllProducts(query = {}) {
-        return await Product.find(query)
-            .populate('category', 'name description')
-            .sort({ createdAt: -1 });
+        const where = {};
+        if (query.name) {
+            where.name = { [Op.like]: `%${query.name}%` };
+        }
+        if (query.categoryId) {
+            where.categoryId = query.categoryId;
+        }
+        if (query.minPrice) {
+            where.price = { ...where.price, [Op.gte]: query.minPrice };
+        }
+        if (query.maxPrice) {
+            where.price = { ...where.price, [Op.lte]: query.maxPrice };
+        }
+
+        return await Product.findAll({
+            where,
+            include: [{
+                model: Category,
+                as: 'category'
+            }],
+            order: [['name', 'ASC']]
+        });
     }
 
     async getProductById(id) {
-        return await Product.findById(id)
-            .populate('category', 'name description');
+        return await Product.findByPk(id, {
+            include: [{
+                model: Category,
+                as: 'category'
+            }]
+        });
     }
 
     async updateProduct(id, updateData) {
-        return await Product.findByIdAndUpdate(
-            id,
-            { $set: updateData },
-            { new: true, runValidators: true }
-        ).populate('category', 'name description');
+        const product = await Product.findByPk(id);
+        if (!product) return null;
+
+        return await product.update(updateData);
     }
 
     async deleteProduct(id) {
-        return await Product.findByIdAndDelete(id);
+        const product = await Product.findByPk(id);
+        if (!product) return null;
+
+        await product.destroy();
+        return product;
     }
 
     async getProductsByCategory(categoryId) {
-        return await Product.find({ category: categoryId })
-            .populate('category', 'name description');
+        return await Product.findAll({
+            where: { categoryId },
+            include: [{
+                model: Category,
+                as: 'category'
+            }]
+        });
+    }
+
+    async getLowStockProducts(threshold = 10) {
+        return await Product.findAll({
+            where: {
+                stock: {
+                    [Op.lte]: threshold
+                }
+            },
+            include: [{
+                model: Category,
+                as: 'category'
+            }]
+        });
+    }
+
+    async searchProducts(searchTerm) {
+        return await Product.findAll({
+            where: {
+                [Op.or]: [
+                    { name: { [Op.like]: `%${searchTerm}%` } },
+                    { '$category.name$': { [Op.like]: `%${searchTerm}%` } }
+                ]
+            },
+            include: [{
+                model: Category,
+                as: 'category'
+            }]
+        });
     }
 
     async updateStock(id, quantity) {
-        return await Product.findByIdAndUpdate(
-            id,
-            { $inc: { stock: quantity } },
-            { new: true, runValidators: true }
-        );
-    }
+        const product = await Product.findByPk(id);
+        if (!product) return null;
 
-    async findProductByName(name) {
-        return await Product.findOne({ name })
-            .populate('category', 'name description');
+        return await product.update({
+            stock: product.stock + quantity
+        });
     }
 }
 

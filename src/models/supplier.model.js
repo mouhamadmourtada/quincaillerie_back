@@ -1,33 +1,48 @@
-const mongoose = require('mongoose');
+const { Model, DataTypes } = require('sequelize');
+const sequelize = require('../config/database.config');
 
-const supplierSchema = new mongoose.Schema({
+class Supplier extends Model {}
+
+Supplier.init({
+    id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true
+    },
     name: {
-        type: String,
-        required: [true, 'Supplier name is required'],
-        trim: true
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
     },
     email: {
-        type: String,
-        required: [true, 'Email is required'],
+        type: DataTypes.STRING,
+        allowNull: false,
         unique: true,
-        trim: true,
-        lowercase: true,
-        match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
+        validate: {
+            isEmail: true
+        }
     },
     phone: {
-        type: String,
-        required: [true, 'Phone number is required'],
-        trim: true
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
     },
     address: {
-        type: String,
-        required: [true, 'Address is required'],
-        trim: true
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
     }
 }, {
+    sequelize,
+    modelName: 'Supplier',
+    tableName: 'suppliers',
     timestamps: true
 });
-
-const Supplier = mongoose.model('Supplier', supplierSchema);
 
 module.exports = Supplier;

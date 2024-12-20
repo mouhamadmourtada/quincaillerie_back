@@ -1,86 +1,137 @@
-const mongoose = require('mongoose');
+const { Model, DataTypes } = require('sequelize');
+const sequelize = require('../config/database.config');
 
-const saleItemSchema = new mongoose.Schema({
-    productId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product',
-        required: true
-    },
-    quantity: {
-        type: Number,
-        required: true,
-        min: [1, 'Quantity must be at least 1']
-    },
-    unitPrice: {
-        type: Number,
-        required: true,
-        min: [0, 'Unit price cannot be negative']
-    },
-    totalPrice: {
-        type: Number,
-        required: true,
-        min: [0, 'Total price cannot be negative']
-    }
-});
+class SaleItem extends Model {}
 
-const saleSchema = new mongoose.Schema({
-    items: {
-        type: [saleItemSchema],
-        required: true,
-        validate: {
-            validator: function(items) {
-                return items && items.length > 0;
-            },
-            message: 'Sale must have at least one item'
+SaleItem.init({
+    id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true
+    },
+    saleId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'sales',
+            key: 'id'
         }
     },
-    totalAmount: {
-        type: Number,
-        required: true,
-        min: [0, 'Total amount cannot be negative']
+    productId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'products',
+            key: 'id'
+        }
     },
-    customerName: {
-        type: String,
-        required: true,
-        trim: true
+    quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        validate: {
+            min: 1
+        }
     },
-    customerPhone: {
-        type: String,
-        required: true,
-        trim: true
+    unitPrice: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        validate: {
+            min: 0
+        }
     },
-    saleDate: {
-        type: Date,
-        default: Date.now
-    },
-    paymentDate: {
-        type: Date,
-        default: null
-    },
-    paymentType: {
-        type: String,
-        enum: ['CASH', 'CARD', 'TRANSFER'],
-        required: true
-    },
-    status: {
-        type: String,
-        enum: ['PENDING', 'PAID', 'CANCELLED'],
-        default: 'PENDING'
-    },
-    createdBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
+    totalPrice: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        validate: {
+            min: 0
+        }
     }
 }, {
+    sequelize,
+    modelName: 'SaleItem',
+    tableName: 'sale_items',
     timestamps: true
 });
 
-// Index pour améliorer les performances des recherches
-saleSchema.index({ customerName: 1, saleDate: -1 });
-saleSchema.index({ status: 1 });
-saleSchema.index({ createdBy: 1 });
+class Sale extends Model {}
 
-const Sale = mongoose.model('Sale', saleSchema);
+Sale.init({
+    id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true
+    },
+    totalAmount: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: false,
+        validate: {
+            min: 0
+        }
+    },
+    customerName: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
+    },
+    customerPhone: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        validate: {
+            notEmpty: true
+        }
+    },
+    saleDate: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW
+    },
+    paymentDate: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    paymentType: {
+        type: DataTypes.ENUM('CASH', 'CARD', 'TRANSFER'),
+        allowNull: false
+    },
+    status: {
+        type: DataTypes.ENUM('PENDING', 'PAID', 'CANCELLED'),
+        defaultValue: 'PENDING'
+    },
+    userId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        references: {
+            model: 'users',
+            key: 'id'
+        }
+    }
+}, {
+    sequelize,
+    modelName: 'Sale',
+    tableName: 'sales',
+    timestamps: true,
+    indexes: [
+        {
+            fields: ['customerName', 'saleDate']
+        },
+        {
+            fields: ['status']
+        },
+        {
+            fields: ['userId']
+        }
+    ]
+});
 
-module.exports = Sale;
+// Définir les associations
+Sale.hasMany(SaleItem, {
+    foreignKey: 'saleId',
+    as: 'items'
+});
+
+SaleItem.belongsTo(Sale, {
+    foreignKey: 'saleId'
+});
+
+module.exports = { Sale, SaleItem };

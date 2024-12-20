@@ -1,33 +1,22 @@
 const productService = require('../services/product.service');
-const categoryService = require('../services/category.service');
 
 class ProductController {
     async createProduct(req, res) {
         try {
-            // Vérifier si la catégorie existe
-            const category = await categoryService.getCategoryById(req.body.category);
-            if (!category) {
-                return res.status(400).json({ message: 'Category not found' });
-            }
-
-            const { name } = req.body;
-            const productExists = await productService.findProductByName(name);
-            if (productExists) {
-                return res.status(400).json({ message: 'Product with this name already exists' });
-            }
-
             const product = await productService.createProduct(req.body);
-            res.status(201).json(await productService.getProductById(product._id));
+            res.status(201).json(product);
         } catch (error) {
+            console.error('Create product error:', error);
             res.status(400).json({ message: error.message });
         }
     }
 
     async getAllProducts(req, res) {
         try {
-            const products = await productService.getAllProducts();
+            const products = await productService.getAllProducts(req.query);
             res.json(products);
         } catch (error) {
+            console.error('Get products error:', error);
             res.status(500).json({ message: error.message });
         }
     }
@@ -40,26 +29,21 @@ class ProductController {
             }
             res.json(product);
         } catch (error) {
+            console.error('Get product error:', error);
             res.status(500).json({ message: error.message });
         }
     }
 
     async updateProduct(req, res) {
         try {
-            if (req.body.category) {
-                const category = await categoryService.getCategoryById(req.body.category);
-                if (!category) {
-                    return res.status(400).json({ message: 'Category not found' });
-                }
-            }
-
             const product = await productService.updateProduct(req.params.id, req.body);
             if (!product) {
                 return res.status(404).json({ message: 'Product not found' });
             }
             res.json(product);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            console.error('Update product error:', error);
+            res.status(400).json({ message: error.message });
         }
     }
 
@@ -71,6 +55,7 @@ class ProductController {
             }
             res.json({ message: 'Product deleted successfully' });
         } catch (error) {
+            console.error('Delete product error:', error);
             res.status(500).json({ message: error.message });
         }
     }
@@ -80,6 +65,29 @@ class ProductController {
             const products = await productService.getProductsByCategory(req.params.categoryId);
             res.json(products);
         } catch (error) {
+            console.error('Get products by category error:', error);
+            res.status(500).json({ message: error.message });
+        }
+    }
+
+    async getLowStockProducts(req, res) {
+        try {
+            const threshold = parseInt(req.query.threshold) || 10;
+            const products = await productService.getLowStockProducts(threshold);
+            res.json(products);
+        } catch (error) {
+            console.error('Get low stock products error:', error);
+            res.status(500).json({ message: error.message });
+        }
+    }
+
+    async searchProducts(req, res) {
+        try {
+            const { query } = req.query;
+            const products = await productService.searchProducts(query);
+            res.json(products);
+        } catch (error) {
+            console.error('Search products error:', error);
             res.status(500).json({ message: error.message });
         }
     }
@@ -87,17 +95,14 @@ class ProductController {
     async updateStock(req, res) {
         try {
             const { quantity } = req.body;
-            if (typeof quantity !== 'number') {
-                return res.status(400).json({ message: 'Quantity must be a number' });
-            }
-
             const product = await productService.updateStock(req.params.id, quantity);
             if (!product) {
                 return res.status(404).json({ message: 'Product not found' });
             }
             res.json(product);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            console.error('Update stock error:', error);
+            res.status(400).json({ message: error.message });
         }
     }
 }

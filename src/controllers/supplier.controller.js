@@ -1,32 +1,25 @@
 const supplierService = require('../services/supplier.service');
 
 class SupplierController {
-    async createSupplier(req, res) {
+    async createSupplier(req, res, next) {
         try {
-            const { email } = req.body;
-            const supplierExists = await supplierService.findSupplierByEmail(email);
-
-            if (supplierExists) {
-                return res.status(400).json({ message: 'Supplier with this email already exists' });
-            }
-
             const supplier = await supplierService.createSupplier(req.body);
             res.status(201).json(supplier);
         } catch (error) {
-            res.status(400).json({ message: error.message });
+            next(error);
         }
     }
 
-    async getAllSuppliers(req, res) {
+    async getAllSuppliers(req, res, next) {
         try {
-            const suppliers = await supplierService.getAllSuppliers();
+            const suppliers = await supplierService.getAllSuppliers(req.query);
             res.json(suppliers);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async getSupplierById(req, res) {
+    async getSupplierById(req, res, next) {
         try {
             const supplier = await supplierService.getSupplierById(req.params.id);
             if (!supplier) {
@@ -34,11 +27,11 @@ class SupplierController {
             }
             res.json(supplier);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async updateSupplier(req, res) {
+    async updateSupplier(req, res, next) {
         try {
             const supplier = await supplierService.updateSupplier(req.params.id, req.body);
             if (!supplier) {
@@ -46,19 +39,37 @@ class SupplierController {
             }
             res.json(supplier);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async deleteSupplier(req, res) {
+    async deleteSupplier(req, res, next) {
         try {
             const supplier = await supplierService.deleteSupplier(req.params.id);
             if (!supplier) {
                 return res.status(404).json({ message: 'Supplier not found' });
             }
-            res.json({ message: 'Supplier deleted successfully' });
+            res.status(204).end();
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
+        }
+    }
+
+    async searchSuppliers(req, res, next) {
+        try {
+            const suppliers = await supplierService.searchSuppliers(req.query.q);
+            res.json(suppliers);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getSupplierByEmail(req, res, next) {
+        try {
+            const supplier = await supplierService.findSupplierByEmail(req.params.email);
+            res.json(supplier);
+        } catch (error) {
+            next(error);
         }
     }
 }

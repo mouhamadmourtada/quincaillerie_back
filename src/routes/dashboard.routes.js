@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const dashboardController = require('../controllers/dashboard.controller');
-const { protect, admin } = require('../middlewares/auth.middleware');
+const { protect } = require('../middlewares/auth.middleware');
 
-// Protéger la route du dashboard
+// Protéger toutes les routes
 router.use(protect);
 
-// Route pour obtenir les statistiques du dashboard
-router.get('/stats', dashboardController.getDashboardStats.bind(dashboardController));
+// Routes du tableau de bord
+router.get('/stats', dashboardController.getDashboardStats);
+router.get('/sales', dashboardController.getSalesStats);
+router.get('/inventory', dashboardController.getInventoryStats);
 
 module.exports = router;

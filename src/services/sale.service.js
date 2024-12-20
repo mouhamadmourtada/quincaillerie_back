@@ -1,56 +1,127 @@
 const { Sale, SaleItem, Product, User } = require('../models');
-const sequelize = require('../config/database.config');
+const { v4: uuidv4 } = require('uuid');
 const { Op } = require('sequelize');
+const sequelize = require('../config/database');
+const { NotFoundError, ValidationError, AppError } = require('../utils/errors');
 
 class SaleService {
     async createSale(saleData, userId) {
-        const t = await sequelize.transaction();
+        const transaction = await sequelize.transaction();
 
         try {
-            // Créer la vente
-            const sale = await Sale.create({
-                ...saleData,
-                userId,
-                totalAmount: 0 // Sera mis à jour après le calcul des items
-            }, { transaction: t });
+            // Récupérer tous les produits concernés
+            const productIds = saleData.items.map(item => item.productId);
+            const products = await Product.findAll({
+                where: { id: productIds }
+            });
 
-            // Traiter les items et calculer le montant total
-            let totalAmount = 0;
-            const saleItems = [];
-
+            // Vérifier que tous les produits existent et ont assez de stock
+            const productsMap = new Map(products.map(p => [p.id, p]));
             for (const item of saleData.items) {
-                const product = await Product.findByPk(item.productId, { transaction: t });
+                const product = productsMap.get(item.productId);
                 if (!product) {
-                    throw new Error(`Product not found: ${item.productId}`);
+                    throw new NotFoundError(`Product with id ${item.productId} not found`);
                 }
                 if (product.stock < item.quantity) {
-                    throw new Error(`Insufficient stock for product: ${product.name}`);
+                    throw new ValidationError(`Not enough stock for product ${product.name}. Available: ${product.stock}, Requested: ${item.quantity}`);
                 }
+            }
 
-                // Mettre à jour le stock
-                await product.update({
-                    stock: product.stock - item.quantity
-                }, { transaction: t });
+            // Calculer le montant total et préparer les items
+            let totalAmount = 0;
+            const saleItems = saleData.items.map(item => {
+                const product = productsMap.get(item.productId);
+                const totalPrice = product.price * item.quantity;
+                totalAmount += totalPrice;
 
-                // Créer l'item de vente
-                const saleItem = await SaleItem.create({
-                    saleId: sale.id,
+                return {
+                    id: uuidv4(),
                     productId: item.productId,
                     quantity: item.quantity,
                     unitPrice: product.price,
-                    totalPrice: product.price * item.quantity
-                }, { transaction: t });
+                    totalPrice: totalPrice
+                };
+            });
 
-                totalAmount += saleItem.totalPrice;
-                saleItems.push(saleItem);
+            // Créer la vente
+            const sale = await Sale.create({
+                id: uuidv4(),
+                totalAmount,
+                customerName: saleData.customerName,
+                customerPhone: saleData.customerPhone,
+                saleDate: saleData.saleDate || new Date(),
+                paymentDate: saleData.paymentType === 'PAID' ? new Date() : null,
+                paymentType: saleData.paymentType,
+                status: saleData.status || 'PENDING',
+                userId
+            }, { transaction });
+
+            // Créer les items de la vente
+            await SaleItem.bulkCreate(
+                saleItems.map(item => ({
+                    ...item,
+                    saleId: sale.id
+                })),
+                { transaction }
+            );
+
+            // Mettre à jour le stock des produits
+            for (const item of saleData.items) {
+                const product = productsMap.get(item.productId);
+                await product.decrement('stock', {
+                    by: item.quantity,
+                    transaction
+                });
             }
 
-            // Mettre à jour le montant total de la vente
-            await sale.update({ totalAmount }, { transaction: t });
+            await transaction.commit();
 
-            await t.commit();
+            // Retourner la vente avec ses items
+            return await this.getSaleById(sale.id);
+        } catch (error) {
+            await transaction.rollback();
+            if (error instanceof AppError) throw error;
+            console.error('Create sale error:', error);
+            throw new AppError('Failed to create sale');
+        }
+    }
 
-            return await Sale.findByPk(sale.id, {
+    async getAllSales(query = {}) {
+        try {
+            const where = {};
+            if (query.status) {
+                where.status = query.status;
+            }
+            if (query.paymentType) {
+                where.paymentType = query.paymentType;
+            }
+            if (query.startDate && query.endDate) {
+                where.saleDate = {
+                    [Op.between]: [new Date(query.startDate), new Date(query.endDate)]
+                };
+            }
+
+            return await Sale.findAll({
+                where,
+                include: [{
+                    model: SaleItem,
+                    as: 'items',
+                    include: [{
+                        model: Product,
+                        as: 'product'
+                    }]
+                }],
+                order: [['saleDate', 'DESC']]
+            });
+        } catch (error) {
+            console.error('Get all sales error:', error);
+            throw new AppError('Failed to retrieve sales');
+        }
+    }
+
+    async getSaleById(id) {
+        try {
+            const sale = await Sale.findByPk(id, {
                 include: [{
                     model: SaleItem,
                     as: 'items',
@@ -60,131 +131,152 @@ class SaleService {
                     }]
                 }]
             });
+
+            if (!sale) {
+                throw new NotFoundError('Sale not found');
+            }
+
+            return sale;
         } catch (error) {
-            await t.rollback();
-            throw error;
+            if (error instanceof AppError) throw error;
+            console.error('Get sale error:', error);
+            throw new AppError('Failed to retrieve sale');
         }
     }
 
-    async getAllSales(query = {}) {
-        return await Sale.findAll({
-            include: [{
-                model: SaleItem,
-                as: 'items',
-                include: [{
-                    model: Product,
-                    as: 'product'
-                }]
-            }, {
-                model: User,
-                as: 'user',
-                attributes: ['id', 'username']
-            }],
-            order: [['createdAt', 'DESC']]
-        });
-    }
-
-    async getSaleById(id) {
-        return await Sale.findByPk(id, {
-            include: [{
-                model: SaleItem,
-                as: 'items',
-                include: [{
-                    model: Product,
-                    as: 'product'
-                }]
-            }, {
-                model: User,
-                as: 'user',
-                attributes: ['id', 'username']
-            }]
-        });
-    }
-
     async updateSale(id, updateData) {
-        const sale = await Sale.findByPk(id);
-        if (!sale) return null;
+        try {
+            const sale = await Sale.findByPk(id);
+            if (!sale) {
+                throw new NotFoundError('Sale not found');
+            }
 
-        return await sale.update(updateData);
+            // Si le statut passe à PAID, mettre à jour la date de paiement
+            if (updateData.status === 'PAID' && sale.status !== 'PAID') {
+                updateData.paymentDate = new Date();
+            }
+
+            return await sale.update(updateData);
+        } catch (error) {
+            if (error instanceof AppError) throw error;
+            console.error('Update sale error:', error);
+            throw new AppError('Failed to update sale');
+        }
     }
 
     async deleteSale(id) {
-        const t = await sequelize.transaction();
+        const transaction = await sequelize.transaction();
 
         try {
             const sale = await Sale.findByPk(id, {
                 include: [{
                     model: SaleItem,
                     as: 'items'
-                }],
-                transaction: t
+                }]
             });
 
             if (!sale) {
-                throw new Error('Sale not found');
+                throw new NotFoundError('Sale not found');
             }
 
-            // Restaurer les stocks
+            // Restaurer le stock des produits
             for (const item of sale.items) {
-                await Product.increment(
-                    { stock: item.quantity },
-                    { 
-                        where: { id: item.productId },
-                        transaction: t
-                    }
-                );
+                await Product.increment('stock', {
+                    by: item.quantity,
+                    where: { id: item.productId },
+                    transaction
+                });
             }
 
-            await sale.destroy({ transaction: t });
-            await t.commit();
+            await sale.destroy({ transaction });
+            await transaction.commit();
+
             return sale;
         } catch (error) {
-            await t.rollback();
-            throw error;
+            await transaction.rollback();
+            if (error instanceof AppError) throw error;
+            console.error('Delete sale error:', error);
+            throw new AppError('Failed to delete sale');
         }
-    }
-
-    async updateSaleStatus(id, status, paymentType = null) {
-        const updateData = { status };
-        if (status === 'PAID') {
-            updateData.paymentDate = new Date();
-            if (paymentType) {
-                updateData.paymentType = paymentType;
-            }
-        }
-        return await this.updateSale(id, updateData);
     }
 
     async getSalesByDateRange(startDate, endDate) {
-        return await Sale.findAll({
-            where: {
-                saleDate: {
-                    [Op.between]: [startDate, endDate]
-                }
-            },
-            include: [{
-                model: SaleItem,
-                as: 'items',
+        try {
+            if (!startDate || !endDate) {
+                throw new ValidationError('Start date and end date are required');
+            }
+
+            return await Sale.findAll({
+                where: {
+                    saleDate: {
+                        [Op.between]: [new Date(startDate), new Date(endDate)]
+                    }
+                },
                 include: [{
-                    model: Product,
-                    as: 'product'
-                }]
-            }]
-        });
+                    model: SaleItem,
+                    as: 'items',
+                    include: [{
+                        model: Product,
+                        as: 'product'
+                    }]
+                }],
+                order: [['saleDate', 'DESC']]
+            });
+        } catch (error) {
+            if (error instanceof AppError) throw error;
+            console.error('Get sales by date range error:', error);
+            throw new AppError('Failed to retrieve sales by date range');
+        }
     }
 
-    async getSalesByCustomer(customerPhone) {
-        return await Sale.findAll({
-            where: { customerPhone },
-            include: [{
-                model: SaleItem,
-                as: 'items',
+    async getSalesByCustomerPhone(customerPhone) {
+        try {
+            if (!customerPhone) {
+                throw new ValidationError('Customer phone is required');
+            }
+
+            return await Sale.findAll({
+                where: { customerPhone },
                 include: [{
-                    model: Product,
-                    as: 'product'
-                }]
-            }]
-        });
+                    model: SaleItem,
+                    as: 'items',
+                    include: [{
+                        model: Product,
+                        as: 'product'
+                    }]
+                }],
+                order: [['saleDate', 'DESC']]
+            });
+        } catch (error) {
+            if (error instanceof AppError) throw error;
+            console.error('Get sales by customer error:', error);
+            throw new AppError('Failed to retrieve sales by customer');
+        }
+    }
+
+    async getSalesByPaymentType(paymentType) {
+        try {
+            if (!paymentType) {
+                throw new ValidationError('Payment type is required');
+            }
+
+            return await Sale.findAll({
+                where: { paymentType },
+                include: [{
+                    model: SaleItem,
+                    as: 'items',
+                    include: [{
+                        model: Product,
+                        as: 'product'
+                    }]
+                }],
+                order: [['saleDate', 'DESC']]
+            });
+        } catch (error) {
+            if (error instanceof AppError) throw error;
+            console.error('Get sales by payment type error:', error);
+            throw new AppError('Failed to retrieve sales by payment type');
+        }
     }
 }
 

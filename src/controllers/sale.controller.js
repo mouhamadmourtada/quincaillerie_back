@@ -1,98 +1,85 @@
 const saleService = require('../services/sale.service');
+const { createSaleSchema, updateSaleSchema } = require('../dtos/sale.dto');
+const validate = require('../middlewares/validation.middleware');
+const { AppError } = require('../utils/errors');
 
 class SaleController {
-    async createSale(req, res) {
+    async createSale(req, res, next) {
         try {
-            const sale = await saleService.createSale(req.body, req.user._id);
+            const userId = req.user.id;
+            const sale = await saleService.createSale(req.body, userId);
             res.status(201).json(sale);
         } catch (error) {
-            res.status(400).json({ message: error.message });
+            next(error);
         }
     }
 
-    async getAllSales(req, res) {
+    async getAllSales(req, res, next) {
         try {
-            const sales = await saleService.getAllSales();
+            const sales = await saleService.getAllSales(req.query);
             res.json(sales);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async getSaleById(req, res) {
+    async getSaleById(req, res, next) {
         try {
             const sale = await saleService.getSaleById(req.params.id);
             if (!sale) {
-                return res.status(404).json({ message: 'Sale not found' });
+                throw new AppError('Sale not found', 404);
             }
             res.json(sale);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async updateSale(req, res) {
+    async updateSale(req, res, next) {
         try {
             const sale = await saleService.updateSale(req.params.id, req.body);
-            if (!sale) {
-                return res.status(404).json({ message: 'Sale not found' });
-            }
             res.json(sale);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async deleteSale(req, res) {
+    async deleteSale(req, res, next) {
         try {
-            const sale = await saleService.deleteSale(req.params.id);
-            if (!sale) {
-                return res.status(404).json({ message: 'Sale not found' });
-            }
-            res.json({ message: 'Sale deleted successfully' });
+            await saleService.deleteSale(req.params.id);
+            res.status(204).end();
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async updateSaleStatus(req, res) {
-        try {
-            const { status, paymentType } = req.body;
-            if (!['PENDING', 'PAID', 'CANCELLED'].includes(status)) {
-                return res.status(400).json({ message: 'Invalid status' });
-            }
-
-            const sale = await saleService.updateSaleStatus(req.params.id, status, paymentType);
-            if (!sale) {
-                return res.status(404).json({ message: 'Sale not found' });
-            }
-            res.json(sale);
-        } catch (error) {
-            res.status(500).json({ message: error.message });
-        }
-    }
-
-    async getSalesByDateRange(req, res) {
+    async getSalesByDateRange(req, res, next) {
         try {
             const { startDate, endDate } = req.query;
-            if (!startDate || !endDate) {
-                return res.status(400).json({ message: 'Start date and end date are required' });
-            }
-
-            const sales = await saleService.getSalesByDateRange(new Date(startDate), new Date(endDate));
+            const sales = await saleService.getSalesByDateRange(startDate, endDate);
             res.json(sales);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
         }
     }
 
-    async getSalesByCustomer(req, res) {
+    async getSalesByCustomerPhone(req, res, next) {
         try {
             const { customerPhone } = req.params;
-            const sales = await saleService.getSalesByCustomer(customerPhone);
+            const sales = await saleService.getSalesByCustomerPhone(customerPhone);
             res.json(sales);
         } catch (error) {
-            res.status(500).json({ message: error.message });
+            next(error);
+        }
+    }
+
+    async getSalesByPaymentType(req, res, next) {
+        try {
+            const { paymentType } = req.params;
+            const sales = await saleService.getSalesByPaymentType(paymentType);
+            res.json(sales);
+        } catch (error) {
+            next(error);
         }
     }
 }

@@ -1,21 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const saleController = require('../controllers/sale.controller');
-const { protect, admin } = require('../middlewares/auth.middleware');
+const { createSaleSchema, updateSaleSchema } = require('../dtos/sale.dto');
+const validate = require('../middlewares/validation.middleware');
+const { protect } = require('../middlewares/auth.middleware');
 
-// Protéger toutes les routes des ventes
+// Protéger toutes les routes
 router.use(protect);
 
-// Routes CRUD de base
-router.post('/', saleController.createSale.bind(saleController));
-router.get('/', saleController.getAllSales.bind(saleController));
-router.get('/:id', saleController.getSaleById.bind(saleController));
-router.put('/:id', admin, saleController.updateSale.bind(saleController));
-router.delete('/:id', admin, saleController.deleteSale.bind(saleController));
+// Routes principales
+router.post('/', validate(createSaleSchema), saleController.createSale);
+router.get('/', saleController.getAllSales);
+router.get('/:id', saleController.getSaleById);
+router.patch('/:id', validate(updateSaleSchema), saleController.updateSale);
+router.delete('/:id', saleController.deleteSale);
 
-// Routes spéciales
-router.patch('/:id/status', saleController.updateSaleStatus.bind(saleController));
-router.get('/date-range', saleController.getSalesByDateRange.bind(saleController));
-router.get('/customer/:customerPhone', saleController.getSalesByCustomer.bind(saleController));
+// Routes spécifiques
+router.get('/date-range', saleController.getSalesByDateRange);
+router.get('/customer/:customerPhone', saleController.getSalesByCustomerPhone);
+router.get('/payment-type/:paymentType', saleController.getSalesByPaymentType);
 
 module.exports = router;

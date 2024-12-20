@@ -1,163 +1,191 @@
-const { Sale, Product, Category, SaleItem } = require('../models');
-const { Op, Sequelize } = require('sequelize');
+const { Sale, Product, Category, User } = require('../models');
+const { Op } = require('sequelize');
+const sequelize = require('../config/database');
+const { AppError } = require('../utils/errors');
 
 class DashboardService {
-    async getStats() {
-        const currentDate = new Date();
-        const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-        const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-
+    async getDashboardStats() {
         try {
-            const [
-                totalRevenue,
-                totalSales,
-                averageOrderValue,
-                topProducts,
-                recentSales,
-                monthlySales,
-                lowStockProducts,
-                categoryDistribution,
-                paymentMethodDistribution
-            ] = await Promise.all([
-                // Total des revenus
-                Sale.sum('totalAmount', {
-                    where: { status: 'PAID' }
-                }),
+            // Obtenir la date d'aujourd'hui et le début du mois
+            const today = new Date();
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-                // Nombre total de ventes
-                Sale.count({
-                    where: { status: 'PAID' }
-                }),
+            let stats = {
+                currentMonthStats: {
+                    totalSales: 0,
+                    totalRevenue: 0
+                },
+                todayStats: {
+                    totalSales: 0,
+                    totalRevenue: 0
+                },
+                inventory: {
+                    totalProducts: 0,
+                    totalCategories: 0,
+                    lowStockProducts: []
+                },
+                paymentStats: [],
+                topProducts: []
+            };
 
-                // Valeur moyenne des commandes
-                Sale.findOne({
+            try {
+                // Statistiques des ventes du mois
+                const salesStats = await Sale.findAll({
                     attributes: [
-                        [Sequelize.fn('AVG', Sequelize.col('totalAmount')), 'averageAmount']
-                    ],
-                    where: { status: 'PAID' }
-                }),
-
-                // Produits les plus vendus
-                SaleItem.findAll({
-                    attributes: [
-                        'productId',
-                        [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalQuantity']
-                    ],
-                    include: [{
-                        model: Product,
-                        as: 'product',
-                        attributes: ['name', 'price']
-                    }],
-                    group: ['productId', 'product.id', 'product.name', 'product.price'],
-                    order: [[Sequelize.fn('SUM', Sequelize.col('quantity')), 'DESC']],
-                    limit: 5
-                }),
-
-                // Ventes récentes
-                Sale.findAll({
-                    include: [{
-                        model: SaleItem,
-                        as: 'items',
-                        include: [{
-                            model: Product,
-                            as: 'product'
-                        }]
-                    }],
-                    order: [['createdAt', 'DESC']],
-                    limit: 5
-                }),
-
-                // Ventes par mois
-                Sale.findAll({
-                    attributes: [
-                        [Sequelize.fn('DATE_FORMAT', Sequelize.col('saleDate'), '%Y-%m'), 'month'],
-                        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
-                        [Sequelize.fn('SUM', Sequelize.col('totalAmount')), 'total']
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'totalSales'],
+                        [sequelize.fn('SUM', sequelize.col('totalAmount')), 'totalRevenue']
                     ],
                     where: {
                         saleDate: {
-                            [Op.gte]: new Date(new Date().getFullYear(), 0, 1)
-                        },
-                        status: 'PAID'
-                    },
-                    group: [Sequelize.fn('DATE_FORMAT', Sequelize.col('saleDate'), '%Y-%m')],
-                    order: [[Sequelize.fn('DATE_FORMAT', Sequelize.col('saleDate'), '%Y-%m'), 'ASC']]
-                }),
+                            [Op.gte]: startOfMonth
+                        }
+                    }
+                });
 
-                // Produits en stock faible
-                Product.findAll({
-                    where: {
-                        stock: { [Op.lte]: 10 }
-                    },
-                    include: [{
-                        model: Category,
-                        as: 'category'
-                    }],
-                    order: [['stock', 'ASC']],
-                    limit: 10
-                }),
+                stats.currentMonthStats = {
+                    totalSales: salesStats[0]?.get('totalSales') || 0,
+                    totalRevenue: salesStats[0]?.get('totalRevenue') || 0
+                };
+            } catch (error) {
+                console.error('Error getting monthly sales stats:', error);
+                // Ne pas propager l'erreur, continuer avec les valeurs par défaut
+            }
 
-                // Distribution par catégorie
-                SaleItem.findAll({
+            try {
+                // Ventes d'aujourd'hui
+                const todaySales = await Sale.findAll({
                     attributes: [
-                        [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalQuantity'],
-                        [Sequelize.fn('SUM', Sequelize.col('totalPrice')), 'totalAmount']
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+                        [sequelize.fn('SUM', sequelize.col('totalAmount')), 'total']
                     ],
-                    include: [{
-                        model: Product,
-                        as: 'product',
-                        include: [{
-                            model: Category,
-                            as: 'category',
-                            attributes: ['name']
-                        }]
-                    }],
-                    group: ['product.categoryId', 'product.category.id', 'product.category.name']
-                }),
+                    where: {
+                        saleDate: {
+                            [Op.gte]: startOfDay
+                        }
+                    }
+                });
 
-                // Distribution des méthodes de paiement
-                Sale.findAll({
+                stats.todayStats = {
+                    totalSales: todaySales[0]?.get('count') || 0,
+                    totalRevenue: todaySales[0]?.get('total') || 0
+                };
+            } catch (error) {
+                console.error('Error getting today sales stats:', error);
+                // Ne pas propager l'erreur, continuer avec les valeurs par défaut
+            }
+
+            try {
+                // Statistiques d'inventaire
+                const [products, categories, lowStockProducts] = await Promise.all([
+                    Product.count(),
+                    Category.count(),
+                    Product.findAll({
+                        where: { stock: { [Op.lt]: 10 } },
+                        include: [{ model: Category, as: 'category' }]
+                    })
+                ]);
+
+                stats.inventory = {
+                    totalProducts: products,
+                    totalCategories: categories,
+                    lowStockProducts: lowStockProducts.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        stock: p.stock,
+                        category: p.category?.name || 'Non catégorisé'
+                    }))
+                };
+            } catch (error) {
+                console.error('Error getting inventory stats:', error);
+                // Ne pas propager l'erreur, continuer avec les valeurs par défaut
+            }
+
+            try {
+                // Statistiques de paiement
+                const paymentStats = await Sale.findAll({
                     attributes: [
                         'paymentType',
-                        [Sequelize.fn('COUNT', Sequelize.col('id')), 'count'],
-                        [Sequelize.fn('SUM', Sequelize.col('totalAmount')), 'total']
+                        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+                        [sequelize.fn('SUM', sequelize.col('totalAmount')), 'total']
                     ],
-                    where: { status: 'PAID' },
+                    where: {
+                        saleDate: {
+                            [Op.gte]: startOfMonth
+                        }
+                    },
                     group: ['paymentType']
-                })
-            ]);
+                });
 
-            return {
-                totalRevenue: totalRevenue || 0,
-                totalSales: totalSales || 0,
-                averageOrderValue: averageOrderValue?.getDataValue('averageAmount') || 0,
-                topProducts: topProducts.map(item => ({
-                    productId: item.productId,
-                    name: item.product.name,
-                    totalQuantity: parseInt(item.getDataValue('totalQuantity')),
-                    price: item.product.price
-                })),
-                recentSales,
-                monthlySales: monthlySales.map(item => ({
-                    month: item.getDataValue('month'),
-                    count: parseInt(item.getDataValue('count')),
-                    total: parseFloat(item.getDataValue('total'))
-                })),
-                lowStockProducts,
-                categoryDistribution: categoryDistribution.map(item => ({
-                    category: item.product.category.name,
-                    quantity: parseInt(item.getDataValue('totalQuantity')),
-                    amount: parseFloat(item.getDataValue('totalAmount'))
-                })),
-                paymentMethodDistribution: paymentMethodDistribution.map(item => ({
-                    method: item.paymentType,
-                    count: parseInt(item.getDataValue('count')),
-                    total: parseFloat(item.getDataValue('total'))
-                }))
-            };
+                stats.paymentStats = paymentStats.map(stat => ({
+                    type: stat.paymentType || 'Non spécifié',
+                    count: stat.get('count') || 0,
+                    total: stat.get('total') || 0
+                }));
+            } catch (error) {
+                console.error('Error getting payment stats:', error);
+                // Ne pas propager l'erreur, continuer avec les valeurs par défaut
+            }
+
+            return stats;
+
         } catch (error) {
-            console.error('Error getting dashboard stats:', error);
-            throw error;
+            console.error('Dashboard stats error:', error);
+            throw new AppError('Une erreur est survenue lors de la récupération des statistiques', 500);
+        }
+    }
+
+    async getSalesStats(startDate, endDate) {
+        try {
+            if (!startDate || !endDate) {
+                throw new AppError('Les dates de début et de fin sont requises', 400);
+            }
+
+            const sales = await Sale.findAll({
+                attributes: [
+                    [sequelize.fn('DATE', sequelize.col('saleDate')), 'date'],
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'totalSales'],
+                    [sequelize.fn('SUM', sequelize.col('totalAmount')), 'totalRevenue']
+                ],
+                where: {
+                    saleDate: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                group: [sequelize.fn('DATE', sequelize.col('saleDate'))],
+                order: [[sequelize.fn('DATE', sequelize.col('saleDate')), 'ASC']]
+            });
+
+            return sales.map(sale => ({
+                date: sale.get('date'),
+                totalSales: sale.get('totalSales') || 0,
+                totalRevenue: sale.get('totalRevenue') || 0
+            }));
+        } catch (error) {
+            console.error('Sales stats error:', error);
+            if (error instanceof AppError) throw error;
+            throw new AppError('Une erreur est survenue lors de la récupération des statistiques de vente', 500);
+        }
+    }
+
+    async getInventoryStats() {
+        try {
+            const categories = await Category.findAll({
+                include: [{
+                    model: Product,
+                    attributes: ['id', 'stock']
+                }]
+            });
+
+            return categories.map(category => ({
+                categoryName: category.name || 'Non catégorisé',
+                totalProducts: category.Products?.length || 0,
+                totalStock: category.Products?.reduce((sum, product) => sum + (product.stock || 0), 0) || 0,
+                lowStockProducts: category.Products?.filter(product => product.stock < 10).length || 0
+            }));
+        } catch (error) {
+            console.error('Inventory stats error:', error);
+            throw new AppError('Une erreur est survenue lors de la récupération des statistiques d\'inventaire', 500);
         }
     }
 }
